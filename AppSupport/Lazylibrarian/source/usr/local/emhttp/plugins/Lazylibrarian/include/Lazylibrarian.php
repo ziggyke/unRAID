@@ -9,7 +9,7 @@ $plglogfile="/var/log/{$authorname}-Logs/{$appname}.log";
 $arrayState=trim(shell_exec( "grep fsState /var/local/emhttp/var.ini | sed -n 's!fsState=\"\(.*\)\"!\\1!p'" ));
 $ver60check=trim(shell_exec( "grep version /etc/unraid-version | sed -n 's!version=\"\(.*\)\"!\\1!p'" ));
 $appRepoURL="https://github.com/DobyTang/LazyLibrarian";
-$authorURL="https://github.com/{$authorname}"
+$authorURL="https://github.com/{$authorname}";
 $versionsURL="{$authorURL}/unRAID/raw/master/Versions";
 
 # Sets the loader background to match the theme based on unRAID version since 6 has a dark theme

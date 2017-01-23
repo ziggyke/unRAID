@@ -6,11 +6,11 @@
 	<!ENTITY launch				"Settings/&name;">
 	<!ENTITY author				"ziggyke">
 	<!ENTITY authorName			"Kristof Ziegler">
-	<!ENTITY plgVersion			"2017.01.23.2">
+	<!ENTITY plgVersion			"2017.01.23.3">
 	<!ENTITY authorURL			"https://github.com/&author;">
 	<!ENTITY pluginURL			"&authorURL;/unRAID/raw/master/Plugins/&name;.plg">
-	<!ENTITY controlFILE		"&name;-&author;-Control-1.1.tar.gz">
-	<!ENTITY controlMD5			"625ee954e6d5836db3bea916d5ab9b40">
+	<!ENTITY controlFILE		"&name;-&author;-Control-1.2.tar.gz">
+	<!ENTITY controlMD5			"b7409ef07fd825a139a6d1ca68bc587e">
 	<!ENTITY controlURL			"&authorURL;/unRAID/raw/master/AppSupport/&name;/&controlFILE;">
 	<!ENTITY dependencyFILE		"&name;-&author;-Dependency-1.0_x86.tar.gz">
 	<!ENTITY dependencyMD5		"6e93a03ca2b5de8e3b2f30c3503bb4b5">
@@ -47,7 +47,7 @@ Version History
 ####By: PhAzE
 ####Revised by: &author;
 
-INITIAL RELEASE
+2017.01.23.3 - INITIAL RELEASE
 ---------------
 - Revised code from PhAzE-Variance, based on the Sickrage unRAID plugin
 - Runs with unRAID 5 or 6 Plugin Manager
