@@ -10,13 +10,13 @@
 	<!ENTITY authorURL			"https://github.com/&author;">
 	<!ENTITY pluginURL			"&authorURL;/unRAID/tree/master/Plugins/&name;.plg">
 	<!ENTITY controlFILE		"&name;-&author;-Control-1.0.tar.gz">
-	<!ENTITY controlMD5			"3dc32b3f554cab9c120f8871a257c75f">
+	<!ENTITY controlMD5			"21834ea6302825bab3bee30307a43454">
 	<!ENTITY controlURL			"&authorURL;/unRAID/tree/master/AppSupport/&name;/&controlFILE;">
 	<!ENTITY dependencyFILE		"&name;-&author;-Dependency-1.0_x86.tar.gz">
-	<!ENTITY dependencyMD5		"139006029fe1210d9cdcce62a0e8ddab">
+	<!ENTITY dependencyMD5		"6e93a03ca2b5de8e3b2f30c3503bb4b5">
 	<!ENTITY dependencyURL		"&authorURL;/unRAID/tree/master/AppSupport/&name;/&dependencyFILE;">
 	<!ENTITY dependencyFILE64	"&name;-&author;-Dependency-1.0_x64.tar.gz">
-	<!ENTITY dependencyMD564	"f6cbd0d21f472ff598083693d5fe6d87">
+	<!ENTITY dependencyMD564	"8e00ed7f37e68a9d9ca387ac1e5a1b30">
 	<!ENTITY dependencyURL64	"&authorURL;/unRAID/tree/master/AppSupport/&name;/&dependencyFILE64;">
 	<!ENTITY appURL				"https://github.com/DobyTang/LazyLibrarian">
 ]>
@@ -138,7 +138,7 @@ All dependency files 					-> These are binaries and apps that are required to ru
 # =========================================================================
 
 app_logger() {
-	# First passed item is the text ($1), secone item is severity ($2 - info, warn, error), third is where to log ($3 - all, log)
+	# First passed item is the text ($1), second item is severity ($2 - info, warn, error), third is where to log ($3 - all, log)
 	local PLGLOGFILE="/var/log/&author;-Logs/&name;.log"
 	local LOGTEXT=$1
 	local LOGTYPE=$2
