@@ -860,7 +860,7 @@ app_datacheck() {
 app_updateplg() {
 	local PLGNAME="$APPNAME.plg"
 	local AUTHURL="https://github.com/$AUTHOR"
-	local PLGURL="$AUTHURL/unRAID/tree/master/Plugins/$PLGNAME">
+	local PLGURL="$AUTHURL/unRAID/raw/master/Plugins/$PLGNAME">
 
 	app_logger "Updating plugin..." info all
 	sleep 1
