@@ -13,10 +13,10 @@
 	<!ENTITY controlMD5			"28e67d454991c546da8ad5912f39d7fe">
 	<!ENTITY controlURL			"&authorURL;/unRAID/raw/master/AppSupport/&name;/&controlFILE;">
 	<!ENTITY dependencyFILE		"&name;-&author;-Dependency-1.0_x86.tar.gz">
-	<!ENTITY dependencyMD5		"6e93a03ca2b5de8e3b2f30c3503bb4b5">
+	<!ENTITY dependencyMD5		"c78062e882d2ad11e9d96e11684318f2">
 	<!ENTITY dependencyURL		"&authorURL;/unRAID/raw/master/AppSupport/&name;/&dependencyFILE;">
 	<!ENTITY dependencyFILE64	"&name;-&author;-Dependency-1.0_x64.tar.gz">
-	<!ENTITY dependencyMD564	"8e00ed7f37e68a9d9ca387ac1e5a1b30">
+	<!ENTITY dependencyMD564	"8972b7a216d7e548c537f74cf7ba959a">
 	<!ENTITY dependencyURL64	"&authorURL;/unRAID/raw/master/AppSupport/&name;/&dependencyFILE64;">
 	<!ENTITY appURL				"https://github.com/DobyTang/LazyLibrarian">
 ]>
@@ -492,7 +492,6 @@ if [ "x86_64" == "$ARCHTYPE" ]; then
 	[ -e "/etc/rc.d/rc.&name;" ] &amp;&amp; rm -f "/etc/rc.d/rc.&name;"
 	[ -f "/usr/bin/&name;-env" ] &amp;&amp; rm -f "/usr/bin/&name;-env"
 	[ -f "/var/log/plugins/&name;.plg" ] &amp;&amp; rm -f "/var/log/plugins/&name;.plg"
-	[ -f "/tmp/plugins/&name;*" ] &amp;&amp; rm -f "/tmp/plugins/&name;*"
 	[ -d "/boot/config/plugins/&name;" ] &amp;&amp; rm -fR "/boot/config/plugins/&name;"
 	[ -f "/boot/config/plugins/&name;.plg.old" ] &amp;&amp; rm -f "/boot/config/plugins/&name;.plg.old"
 	if [ "x86_64" != "$ARCHTYPE" ]; then
