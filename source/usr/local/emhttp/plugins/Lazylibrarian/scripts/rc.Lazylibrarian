@@ -1,0 +1,1061 @@
+#!/bin/sh
+
+# Read our configuration file and set variables
+AUTHOR="ziggyke"
+APPNAME="Lazylibrarian"
+DISPLAYNAME="LazyLibrarian"
+PLGCONFFILE="/boot/config/plugins/${APPNAME}/${APPNAME}.cfg"
+APPCONFFILE="config.ini"
+APPEXECUTABLE="${DISPLAYNAME}.py"
+PIDFILE="/var/run/${APPNAME}/${APPNAME}.pid"
+PLGLOGFILE="/var/log/${AUTHOR}-Logs/${APPNAME}.log"
+ARRAYSTATE=`grep fsState /var/local/emhttp/var.ini | sed -n 's!fsState="\(.*\)"!\1!p'`
+source "$PLGCONFFILE"
+
+# This needs to be near the top so the dependency common directory can be set
+app_check_cache() {
+	local COMMONVAR="false"
+	if [ -e "/mnt/cache" ] && [ -w "/mnt/cache" ]; then
+		local CDRIVE=$( stat -f -c '%T' "/mnt/cache" )
+		if [ "$CDRIVE" != "ramfs" ] && [ "$CDRIVE" != "tmpfs" ] && [ "$CDRIVE" != "proc" ] && [ "$CDRIVE" != "sysfs" ] && [ "$CDRIVE" != "msdos" ]; then
+			COMMONVAR="true"
+		fi
+	fi
+
+	echo "$COMMONVAR"
+}
+
+# Check for cache drive and make sure its an actual disk drive
+DIRCOMMON="/usr/local/${AUTHOR}-Common"
+COMMONCHECK=`app_check_cache`
+[ "$COMMONCHECK" == "true" ] && DIRCOMMON="/mnt/cache/.${AUTHOR}-Common"
+STARTFILE="$DIRCOMMON/${APPNAME}/startcfg.sh"
+
+app_start() {
+	# Get array status and exit if not started
+	if [ "$ARRAYSTATE" != "Started" ]; then
+		app_logger "Starting $DISPLAYNAME..." info all
+		app_logger "Start failed: Array stopped " warn all
+		sleep 1
+		return
+	fi
+
+	# Set service to enabled
+	[ "$SERVICE" != "enable" ] && sed -i 's/disable/enable/' "$PLGCONFFILE"
+
+	# No-op if already running and install if not installed
+	local STATUS=`app_status`
+	if [ "$STATUS" == "RUNNING" ]; then
+		app_logger "Starting $DISPLAYNAME..." info all
+		app_logger "Start OK: Already running " info all
+		sleep 1
+		return
+	elif [ "$STATUS" == "NOT INSTALLED" ]; then
+		app_install
+		app_logger "Starting $DISPLAYNAME..." info all
+	else
+		app_logger "Starting $DISPLAYNAME..." info all
+
+		# Create export file and check dependencies
+		write_export_config
+		if [ "$EXPORTOK" == "no" ]; then
+			app_logger "Start failed: Unable to update export file " error all
+			sleep 3
+			return
+		fi
+	fi
+
+	# Make working directories and write the app config file
+	app_make_dirs
+	write_app_config
+
+	# Start the app
+	sudo -H -u "$RUNAS" /bin/bash -c '. '$STARTFILE'; python '$INSTALLDIR'/'$APPEXECUTABLE' -d -port '$PORT' --datadir '$CONFIGDIR' --start --pidfile '$PIDFILE' > /dev/null 2>&1 &'
+
+	# Checks if the app started properly or not, giving it 10 seconds to create the PID file
+	local TIMER=0
+	while [ ! -e "$PIDFILE" ]; do
+		let TIMER=$TIMER+1
+		sleep 1
+		if [ $TIMER -gt 10 ]; then
+			app_logger "Start failed: No PID created " error all
+			sleep 3
+			return
+		fi
+	done
+
+	# Check if process specified in the PID is actually running, as a double check
+	TIMER=0
+	while [[ -e "$PIDFILE" && ! -f /proc/`cat "$PIDFILE" 2> /dev/null`/exe ]]; do
+		let TIMER=$TIMER+1
+		sleep 1
+		if [ $TIMER -gt 5 ]; then
+			app_logger "Start failed: PID created but no process exists " error all
+			sleep 3
+			return
+		fi
+	done
+
+	# Notify if start was successful or failed
+	app_logger "Start OK! " info all
+	sleep 1
+}
+
+app_stop() {
+	# No-op if already running
+	local STATUS=`app_status`
+	app_logger "Stopping $DISPLAYNAME..." info all
+	if [ "$STATUS" == "STOPPED" ]; then
+		app_logger "Stop OK: Already stopped " info all
+		sleep 1
+		return
+	elif [ "$STATUS" == "NOT INSTALLED" ]; then
+		app_logger "Stop OK: Not installed " info all
+		sleep 1
+		return
+	fi
+
+	# Send the kill command to gracefully shutdown
+	kill $(cat "$PIDFILE" ) 2> /dev/null
+
+	# Begin a timer for shutdown, force kill process if not shut down by end of timer
+	let TIMER=0
+	while [ -e "$PIDFILE" ]; do
+		let TIMER=$TIMER+1
+		sleep 1
+
+		# Process has ended but PID file remains, so remove it
+		if [ ! -f /proc/`cat "$PIDFILE" 2> /dev/null`/exe ]; then
+			rm "$PIDFILE" 2> /dev/null
+		fi
+
+		if [ $TIMER -gt 30 ]; then
+			app_logger "Taking too long: Force killing process" warn log
+			kill -9 $(cat "$PIDFILE" ) 2> /dev/null
+			rm "$PIDFILE"
+			break
+		fi
+	done
+
+	# Sync app settings back to plugin config file
+	sync_app_config
+
+	app_logger "Stop OK! " info all
+	sleep 1
+}
+
+app_restart() {
+	app_stop
+	app_start
+}
+
+app_status() {
+	# Get running status
+	local STATUS=""
+	if [ ! -f "$INSTALLDIR/$APPEXECUTABLE" ]; then
+		STATUS="NOT INSTALLED"
+	elif [ -f "$PIDFILE" ] && [ -f /proc/`cat "$PIDFILE" 2> /dev/null`/exe ]; then
+		STATUS="RUNNING"
+	else
+		STATUS="STOPPED"
+
+		# Remove stale PID file that shouldn't exist anymore
+		[ -f "$PIDFILE" ] && rm -f "$PIDFILE"
+	fi
+
+	echo "$STATUS"
+}
+
+app_buttonstart() {
+	if [ -f "$PLGCONFFILE" ]; then
+		sync_app_config
+		app_start
+	else
+		app_logger "Start failed: Config file missing - Reinstall plugin " error all
+		sleep 3
+	fi
+}
+
+app_update() {
+	local STATUS=`app_status`
+	app_stop
+	app_install
+	[ "$STATUS" == "RUNNING" ] && app_start
+}
+
+write_plg_config() {
+	app_logger "Updating plugin config file" info log
+
+	# Write to the config file
+	[ -f "$PLGCONFFILE" ] && chmod 777 "$PLGCONFFILE"
+	echo "# $DISPLAYNAME configuration:" > "$PLGCONFFILE"
+	echo "SERVICE=\"$SERVICE\"" >> "$PLGCONFFILE"
+	echo "INSTALLDIR=\"$INSTALLDIR\"" >> "$PLGCONFFILE"
+	echo "CONFIGDIR=\"$CONFIGDIR\"" >> "$PLGCONFFILE"
+	echo "LOGDIR=\"$LOGDIR\"" >> "$PLGCONFFILE"
+	echo "CACHEDIR=\"$CACHEDIR\"" >> "$PLGCONFFILE"
+	echo "USESSL=\"$USESSL\"" >> "$PLGCONFFILE"
+	echo "PORT=\"$PORT\"" >> "$PLGCONFFILE"
+	echo "URLBASE=\"$URLBASE\"" >> "$PLGCONFFILE"
+	echo "RUNAS=\"$RUNAS\"" >> "$PLGCONFFILE"
+	echo "BRANCH=\"$BRANCH\"" >> "$PLGCONFFILE"
+	echo "REPO=\"$REPO\"" >> "$PLGCONFFILE"
+	echo "PLG_STORAGESIZE=\"$PLG_STORAGESIZE\"" >> "$PLGCONFFILE"
+	echo "PLG_DATACHECK=\"$PLG_DATACHECK\"" >> "$PLGCONFFILE"
+	echo "CHECKONLINE=\"$CHECKONLINE\"" >> "$PLGCONFFILE"
+}
+
+write_export_config() {
+	# Get array status and exit if not started
+	if [ "$ARRAYSTATE" != "Started" ]; then
+		app_logger "Updating export file" info log
+		app_logger "Export update failed: Array stopped " warn log
+		return
+	fi
+
+	# Check dependencies are installed before proceeding
+	EXPORTOK="no"
+	check_dependencies
+
+	app_logger "Updating export file" info log
+
+	if [ "$DEPSINSTALLED" == "yes" ]; then
+		# Directory needs to exist before making startfile
+		[ ! -d "${DIRCOMMON}/$APPNAME" ] && mkdir -p "${DIRCOMMON}/$APPNAME"
+
+		# This will modify the startup script with environment variables to be set for the RUNAS user
+		local ARCHTYPE=$( /usr/bin/uname -m )
+		[ "x86_64" == "$ARCHTYPE" ] && LIBTYPE="lib64" || LIBTYPE="lib"
+
+		# Write the export file
+		echo '#!/bin/sh' > $STARTFILE
+		echo 'export PYTHONPATH="'$DIRCOMMON'/usr/'$LIBTYPE'/python2.7/site-packages"' >> $STARTFILE
+		if [ "x86_64" == "$ARCHTYPE" ]; then
+			echo 'export LD_LIBRARY_PATH="'$DIRCOMMON'/usr/lib:'$DIRCOMMON'/usr/'$LIBTYPE'"' >> $STARTFILE
+		else
+			echo 'export LD_LIBRARY_PATH="'$DIRCOMMON'/usr/'$LIBTYPE'"' >> $STARTFILE
+			echo 'export SSL_CERT_DIR="/etc/ssl/certs"' >> $STARTFILE
+			echo 'export SSL_CERT_FILE="/etc/ssl/certs/ca-certificates.crt"' >> $STARTFILE
+		fi
+		echo 'export GIT_EXEC_PATH="'$DIRCOMMON'/usr/libexec/git-core"' >> $STARTFILE
+		echo 'export GIT_TEMPLATE_DIR="'$DIRCOMMON'/usr/share/git-core/templates"' >> $STARTFILE
+		echo 'export PATH="'$DIRCOMMON'/usr/bin:$PATH"' >> $STARTFILE
+		echo 'export LC_ALL="en_US.UTF-8"' >> $STARTFILE
+		echo 'export LANG="en_US.UTF-8"' >> $STARTFILE
+
+		# Create or update shortcut file
+		app_logger "Updating shorcut file" info log
+		echo "#!/bin/bash" > "/usr/bin/${APPNAME}-env"
+		echo "PARAMS=\$@" >> "/usr/bin/${APPNAME}-env"
+		echo "ARRAYSTATE=\`grep fsState /var/local/emhttp/var.ini | sed -n 's!fsState=\"\(.*\)\"!\1!p'\`" >> "/usr/bin/${APPNAME}-env"
+		echo "if [ \"\$ARRAYSTATE\" == \"Started\" ]; then" >> "/usr/bin/${APPNAME}-env"
+		echo "sudo -Hu $RUNAS /bin/bash -c \". ${STARTFILE}; \$PARAMS\"" >> "/usr/bin/${APPNAME}-env"
+		echo "else" >> "/usr/bin/${APPNAME}-env"
+		echo "echo \"Failed: Array offline - Unable to access environment\"" >> "/usr/bin/${APPNAME}-env"
+		echo "fi" >> "/usr/bin/${APPNAME}-env"
+		chmod 777 "/usr/bin/${APPNAME}-env"
+		EXPORTOK="yes"
+	else
+		app_logger "Export update failed: Dependencies missing " error log
+	fi
+}
+
+check_dependencies() {
+	# Set the proper dependency file and lib directory for each Unraid version
+	local ARCHTYPE=$( /usr/bin/uname -m )
+	local DEPFILE=""
+	local DEPMD5=""
+	if [ "x86_64" == "$ARCHTYPE" ]; then
+		DEPFILE=`grep -P 'ENTITY dependencyFILE64\t' /boot/config/plugins/${APPNAME}.plg | sed -n 's!.*"\(.*\)".*!\1!p' | sed "s/&name;/$APPNAME/"`
+		DEPMD5=`grep -P 'ENTITY dependencyMD564\t' /boot/config/plugins/${APPNAME}.plg | sed -n 's!.*"\(.*\)".*!\1!p'`
+	else
+		DEPFILE=`grep -P 'ENTITY dependencyFILE\t' "/boot/config/plugins/${APPNAME}.plg" | sed -n 's!.*"\(.*\)".*!\1!p' | sed "s/&name;/$APPNAME/"`
+		DEPMD5=`grep -P 'ENTITY dependencyMD5\t' "/boot/config/plugins/${APPNAME}.plg" | sed -n 's!.*"\(.*\)".*!\1!p'`
+	fi
+
+	# Install the dependency files from the zip, skip if MD5 is blank as this app doesn't have dependencies
+	DEPSINSTALLED="no"
+	app_logger "Updating dependencies" info log
+	if [ "$DEPMD5" != "" ]; then
+		# Check if dependency install zip exists then install it to the common folder
+		if [ -f "/boot/config/plugins/${APPNAME}/$DEPFILE" ]; then
+
+			# Check dependency MD5 to verify the correct version was found
+			local MD5TEST=`echo "$DEPMD5  /boot/config/plugins/${APPNAME}/$DEPFILE" | md5sum --quiet --status -c - && echo "1" || echo "0"`
+			if [ "$MD5TEST" == "1" ]; then
+				app_logger "Dependency install file has correct MD5" info log
+				app_logger "Using ${DIRCOMMON} for dependency directory" info log
+				[ ! -d "${DIRCOMMON}/var/log/setup/tmp" ] && mkdir -p "${DIRCOMMON}/var/log/setup/tmp"
+				mkdir -p "/tmp/${APPNAME}-deps"
+				tar -xf "/boot/config/plugins/${APPNAME}/$DEPFILE" -C "/tmp/${APPNAME}-deps"
+				[ "$ARCHTYPE" != "x86_64" ] && mv -f /tmp/${APPNAME}-deps/Certs /tmp
+				ROOT="${DIRCOMMON}" upgradepkg --install-new /tmp/${APPNAME}-deps/* > /dev/null 2>&1
+				if [ ! -f "/usr/share/curl/ca-bundle.crt" ] && [ -f "${DIRCOMMON}/usr/share/curl/ca-bundle.crt" ]; then
+					mkdir -p "/usr/share/curl"
+					cp -f "${DIRCOMMON}/usr/share/curl/ca-bundle.crt" "/usr/share/curl/ca-bundle.crt"
+				fi
+
+				# Install CA root certificates
+				if [ "$ARCHTYPE" != "x86_64" ]; then
+					[ -L "/usr/bin/perl" ] && rm -f "/usr/bin/perl"
+					[ ! -e "/usr/bin/perl" ] && ln -s "${DIRCOMMON}/usr/bin/perl" "/usr/bin/perl"
+					upgradepkg --install-new /tmp/Certs/* > /dev/null 2>&1
+				fi
+
+				rm -r "/tmp/${APPNAME}-deps"
+				[ -d "/tmp/Certs" ] && rm -r "/tmp/Certs"
+				DEPSINSTALLED="yes"
+				app_logger "Dependencies updated successfully" info log
+			else
+				app_logger "Failed updating dependencies: Wrong MD5 detected " error log
+			fi
+		else
+			app_logger "Failed updating dependencies: Install file missing " error log
+		fi
+	else
+		app_logger "No dependencies required for this application" info log
+		DEPSINSTALLED="yes"
+	fi
+}
+
+write_app_config() {
+	# Get array status and exit if not started
+	if [ "$ARRAYSTATE" != "Started" ]; then
+		app_logger "Updating application config file" info log
+		app_logger "Config update failed: Array stopped " warn log
+		return
+	fi
+
+	# Write to the applications config file if it exists
+	if [ -e "${CONFIGDIR}/$APPCONFFILE" ]; then
+		app_logger "Updating application config file" info log
+
+		sed -i "s!http_port = .*!http_port = ${PORT}!g" "${CONFIGDIR}/$APPCONFFILE"
+		sed -i "s!http_root = /.*!http_root = /${URLBASE}!g" "${CONFIGDIR}/$APPCONFFILE"
+		if [ -z "$LOGDIR" ] || [ "$LOGDIR" == "" ]; then
+			sed -i "s!log_dir = .*!log_dir = ${CONFIGDIR}/logs!g" "${CONFIGDIR}/$APPCONFFILE"
+		else
+			sed -i "s!log_dir = .*!log_dir = ${LOGDIR}!g" "${CONFIGDIR}/$APPCONFFILE"
+		fi
+		if [ -z "$CACHEDIR" ] || [ "$CACHEDIR" == "" ]; then
+			sed -i "s!cache_dir = .*!cache_dir = ${CONFIGDIR}/cache!g" "${CONFIGDIR}/$APPCONFFILE"
+		else
+			sed -i "s!cache_dir = .*!cache_dir = ${CACHEDIR}!g" "${CONFIGDIR}/$APPCONFFILE"
+		fi
+		if [ "$USESSL" == "yes" ]; then
+			sed -i "s!enable_https = .*!enable_https = 1!g" "${CONFIGDIR}/$APPCONFFILE"
+		else
+			sed -i "s!enable_https = .*!enable_https = 0!g" "${CONFIGDIR}/$APPCONFFILE"
+		fi
+		sed -i "s!launch_browser = .*!launch_browser = 0!g" "${CONFIGDIR}/$APPCONFFILE"
+	elif [ -d "$CONFIGDIR" ] && [ ! -e "${CONFIGDIR}/$APPCONFFILE" ]; then
+		app_logger "Creating application config file" info log
+
+		echo "[General]" > "${CONFIGDIR}/$APPCONFFILE"
+		echo "http_host = 0.0.0.0" >> "${CONFIGDIR}/$APPCONFFILE"
+		echo "http_port = ${PORT}" >> "${CONFIGDIR}/$APPCONFFILE"
+		echo "http_root = /${URLBASE}" >> "${CONFIGDIR}/$APPCONFFILE"
+		if [ -z "$LOGDIR" ] && [ "$LOGDIR" == "" ]; then
+			echo "log_dir = ${CONFIGDIR}/logs" >> "${CONFIGDIR}/$APPCONFFILE"
+		else
+			echo "log_dir = ${LOGDIR}" >> "${CONFIGDIR}/$APPCONFFILE"
+		fi
+		if [ -z "$CACHEDIR" ] && [ "$CACHEDIR" == "" ]; then
+			echo "cache_dir = ${CONFIGDIR}/cache" >> "${CONFIGDIR}/$APPCONFFILE"
+		else
+			echo "cache_dir = ${CACHEDIR}" >> "${CONFIGDIR}/$APPCONFFILE"
+		fi
+		if [ "$USESSL" == "yes" ]; then
+			echo "enable_https = 1" >> "${CONFIGDIR}/$APPCONFFILE"
+		else
+			echo "enable_https = 0" >> "${CONFIGDIR}/$APPCONFFILE"
+		fi
+		echo "launch_browser = 0" >> "${CONFIGDIR}/$APPCONFFILE"
+	else
+		app_logger "Updating application config file" info log
+		app_logger "Config update failed: Directory missing " error log
+	fi
+}
+
+sync_app_config() {
+	# Get array status and exit if not started
+	if [ "$ARRAYSTATE" != "Started" ]; then
+		app_logger "Syncing application and plugin config files" info log
+		app_logger "Sync failed: Array stopped " warn log
+		return
+	fi
+
+	# Write the applications config settings back to the plugin config file if it exists
+	if [ -e "${CONFIGDIR}/$APPCONFFILE" ]; then
+		app_logger "Syncing application and plugin config files" info log
+
+		# Capture settings from app config file
+		PORT=`sed -n 's!http_port = \([0-9][0-9]*\)!\1!p' "${CONFIGDIR}/$APPCONFFILE"`
+		[ "$PORT" == "" ] && PORT="8181"
+		LOGDIR=`sed -n 's!log_dir = \(.*\)!\1!p' "${CONFIGDIR}/$APPCONFFILE"`
+		[ "$LOGDIR" == "logs" ] && LOGDIR=""
+		[ "$LOGDIR" == "${CONFIGDIR}/logs" ] && LOGDIR=""
+		if [ "$LOGDIR" != "" ]; then
+			[[ "${LOGDIR:0:1}" != "/" ]] && LOGDIR="${CONFIGDIR}/$LOGDIR"
+		fi
+		CACHEDIR=`sed -n 's!cache_dir = \(.*\)!\1!p' "${CONFIGDIR}/$APPCONFFILE"`
+		[ "$CACHEDIR" == "cache" ] && CACHEDIR=""
+		[ "$CACHEDIR" == "${CONFIGDIR}/cache" ] && CACHEDIR=""
+		if [ "$CACHEDIR" != "" ]; then
+			[[ "${CACHEDIR:0:1}" != "/" ]] && CACHEDIR="${CONFIGDIR}/$CACHEDIR"
+		fi
+		USESSL=`sed -n 's!enable_https = \(.*\)!\1!p' "${CONFIGDIR}/$APPCONFFILE"`
+		[ "$USESSL" == "1" ] && USESSL="yes" || USESSL="no"
+		URLBASE=`sed -n 's!http_root = /\(.*\)!\1!p' "${CONFIGDIR}/$APPCONFFILE"`
+
+		# Write the settings to plugin config file
+		write_plg_config
+	fi
+}
+
+app_change_settings() {
+	app_logger "Updating settings" info log
+	INSTALLDIR="$1"
+	local NEWCONFIGDIR="$2"
+
+	# This won't allow config files to mix with install files
+	[ "$NEWCONFIGDIR" == "$INSTALLDIR" ] && NEWCONFIGDIR="$INSTALLDIR/config"
+
+	# Checks if old config dir is different than new config dir
+	if [ "$CONFIGDIR" != "$NEWCONFIGDIR" ]; then
+
+		# Check if config dir is relative path, append to install dir if it is
+		[[ "${NEWCONFIGDIR:0:1}" != "/" ]] && NEWCONFIGDIR="${INSTALLDIR}/$NEWCONFIGDIR"
+
+		# If old config files exist, move them to the new directory, unless the config file already exists in the new directory
+		if [ -d "$CONFIGDIR" ] && [ "$CONFIGDIR" != "" ] && [ "$CONFIGDIR" != "/" ] && [ "$CONFIGDIR" != "/boot" ]; then
+			if [ -f "${NEWCONFIGDIR}/$APPCONFFILE" ]; then
+				rm -r "$CONFIGDIR"
+			else
+				app_logger "Moving config files to new config directory" info log
+				if [ "$ARRAYSTATE" == "Started" ]; then
+					mkdir -p "$NEWCONFIGDIR"
+					mv -f "$CONFIGDIR"/.[^.]* "$CONFIGDIR"/* "$NEWCONFIGDIR" > /dev/null 2>&1
+					rm -r "$CONFIGDIR"
+				else
+					app_logger "Move failed: Array stopped " warn log
+				fi
+			fi
+		fi
+	fi
+
+	CONFIGDIR="$NEWCONFIGDIR"
+
+	LOGDIR="$3"
+	if [ "$LOGDIR" == "!" ] || [ "$LOGDIR" == "$INSTALLDIR" ] || [ "$LOGDIR" == "$CONFIGDIR" ] || [ "$LOGDIR" == "$CONFIGDIR/logs" ] || [ "$LOGDIR" == "logs" ]; then
+		LOGDIR=""
+	else
+		[[ "${LOGDIR:0:1}" != "/" ]] && LOGDIR="${CONFIGDIR}/$LOGDIR"
+	fi
+
+	CACHEDIR="$4"
+	if [ "$CACHEDIR" == "!" ] || [ "$CACHEDIR" == "$INSTALLDIR" ] || [ "$CACHEDIR" == "$CONFIGDIR" ] || [ "$CACHEDIR" == "$CONFIGDIR/cache" ] || [ "$CACHEDIR" == "cache" ]; then
+		CACHEDIR=""
+	else
+		[[ "${CACHEDIR:0:1}" != "/" ]] && CACHEDIR="${CONFIGDIR}/$CACHEDIR"
+	fi
+
+	USESSL="$5"
+	PORT="$6"
+
+	URLBASE="$7"
+	[ "$URLBASE" == "!" ] && URLBASE=""
+
+	OLDREPO="$REPO"
+	REPO="$8"
+	OLDBRANCH="$BRANCH"
+	BRANCH="$9"
+	
+	RUNAS="${10}"
+
+	# Create user if necessary
+	if [[ "$RUNAS" != "nobody" && "$RUNAS" != "root" ]]; then
+		if ( ! grep -q ^$RUNAS /etc/passwd ); then
+			useradd -r -g users -d / -s /bin/false "$RUNAS" &> /dev/null
+			cp /etc/passwd /etc/shadow /boot/config
+		fi
+	fi
+
+	PLG_STORAGESIZE="${11}"
+	PLG_DATACHECK="${12}"   
+	CHECKONLINE="${13}"
+
+	# This re-installs the application if branch or repo is changed
+	if [ "$OLDBRANCH" != "$BRANCH" ] || [ "$OLDREPO" != "$REPO" ]; then
+
+		# Check for network connection before proceeding
+		local NETCHECK=`timeout 5 wget --no-check-certificate -qST4 --spider "$REPO" 2>&1 | grep HTTP | tail -1 | cut -f1 | awk '{print $NF}'`
+		if [ "$ARRAYSTATE" == "Started" ] && [ "$NETCHECK" == "OK" ]; then
+
+			# Remove current files so no incompatibilities occur if new repo is supplied
+			if [ "$OLDREPO" != "$REPO" ]; then
+				[ -d "$CONFIGDIR" ] && rm -r "$CONFIGDIR"
+				[ -d "$INSTALLDIR" ] && rm -r "$INSTALLDIR"
+
+				# Check for master repo otherwise install first one found
+				declare -a GETBRANCHES=(`wget --no-check-certificate -qO- ${REPO} | grep 'select-menu-item-text' | grep 'title' | sed -n 's!.* title=\"\(.*\)\">.*!\\1!p'`)
+				local MATCH=0
+				for ELEMENT in "${GETBRANCHES[@]}"
+				do
+					if [[ "$ELEMENT" == "master" || "$ELEMENT" == "Master" ]]; then
+						BRANCH="$ELEMENT"
+						MATCH=1
+					fi
+				done
+				if [ "$MATCH" == "0" ]; then
+					BRANCH=`echo "${GETBRANCHES[0]}"`
+				fi
+			fi
+			app_install
+		else
+			[ "$ARRAYSTATE" != "Started" ] && app_logger "Repo/Branch change failed: Array stopped " warn all
+			[ "$NETCHECK" != "OK" ] && app_logger "Setting failed: Repo unreachable " error all
+			sleep 3
+			REPO="$OLDREPO"
+			BRANCH="$OLDBRANCH"
+		fi
+	fi
+}
+
+app_install() {
+	# Get array status and exit if not started
+	if [ "$ARRAYSTATE" != "Started" ]; then
+		app_logger "Installing $DISPLAYNAME..." info all
+		app_logger "Install failed: Array stopped " warn all
+		sleep 1
+		return
+	fi
+
+	app_logger "Installing $DISPLAYNAME..." info all
+	sleep 1
+
+	# Makes the export file incase required for installation
+	write_export_config
+	if [ "$EXPORTOK" == "no" ]; then
+		app_logger "Install failed: Unable to update export file " error all
+		sleep 3
+		exit 1
+	fi
+
+	# Find the latest version available, blank if no net connection or error
+	local LATESTVERSION=`app_newver`
+	local FILENAME=""
+	local MD5HASH=""
+
+	# If the online version fails, install latest available on the USB
+	if [ "$LATESTVERSION" == "" ]; then
+		app_logger "Unable to get latest version from online - Checking USB for any install file" warn log
+
+		# Find latest version on USB and if it exists set MD5 from file if it too exists
+		FILENAME=`ls -r /boot/config/plugins/${APPNAME} | grep -m1 "${APPNAME}-$AUTHOR-.*-src.tar.gz"`
+		if [ "$FILENAME" == "" ]; then
+			FILENAME="Unknown"
+			MD5HASH=""
+		else
+			app_logger "Install file found on USB - Checking for MD5 file" info log
+			LATESTVERSION=`echo "$FILENAME" | sed -n 's!.*$AUTHOR-\(.*\)-src.*!\1!p'`
+			[ -f "/boot/config/plugins/${APPNAME}/${FILENAME}.md5" ] && MD5HASH=`cat "/boot/config/plugins/${APPNAME}/${FILENAME}.md5"` || MD5HASH=""
+		fi
+	else
+		app_logger "Latest version found: $LATESTVERSION - Checking USB for same install file" info log
+
+		# Check if USB has latest version or download the latest one
+		LATESTVERSION=${LATESTVERSION:0:6}
+		FILENAME="${APPNAME}-$AUTHOR-${LATESTVERSION}-src.tar.gz"
+		if [ ! -e "/boot/config/plugins/${APPNAME}/$FILENAME" ]; then
+			app_logger "No copy found on USB - Downloading install file and checking for MD5 file" info log
+			cd /tmp
+			sudo -H -u "$RUNAS" /bin/bash -c ". $STARTFILE; git clone -b $BRANCH $REPO /tmp/${APPNAME}-${LATESTVERSION}"
+			[ -f "/tmp/${APPNAME}-${LATESTVERSION}/$APPEXECUTABLE" ] && tar -pczf "/boot/config/plugins/${APPNAME}/$FILENAME" -C "/tmp" "${APPNAME}-${LATESTVERSION}"
+			rm -r "/tmp/${APPNAME}-${LATESTVERSION}"
+			MD5HASH=""
+			[ "$MD5HASH" != "" ] && echo "$MD5HASH" > "/boot/config/plugins/${APPNAME}/${FILENAME}.md5"
+		else
+			app_logger "Copy found on USB, checking for MD5 file" info log
+			[ -f "/boot/config/plugins/${APPNAME}/${FILENAME}.md5" ] && MD5HASH=`cat "/boot/config/plugins/${APPNAME}/${FILENAME}.md5"` || MD5HASH=""
+		fi
+	fi
+
+	# Verify if file downloaded/exists
+	if [ -e "/boot/config/plugins/${APPNAME}/$FILENAME" ]; then
+		# Verify the download matches the MD5 hash
+		local TEST=""
+		if [ "$MD5HASH" != "" ]; then
+			app_logger "Located MD5 file - Testing against install file" info log
+			TEST=`echo "$MD5HASH  /boot/config/plugins/${APPNAME}/$FILENAME" | md5sum --quiet --status -c - && echo "1" || echo "0"`
+		else
+			app_logger "No MD5 file located - Attempting decompression integrity test" info log
+
+			# This will test the integrity of the download since no MD5 hashes are available
+			local TEMP=`gzip -t "/boot/config/plugins/${APPNAME}/$FILENAME" 2>&1`
+			[ "$TEMP" == "" ] && 	TEST="1" || TEST="0"
+		fi
+
+		if [ "$TEST" == "1" ]; then
+			if [ "$MD5HASH" != "" ]; then
+				app_logger "MD5 of $FILENAME is valid - Proceeding with install" info log
+			else
+				app_logger "Integrity of $FILENAME looks good - Proceeding with install" info log
+				MD5HASH=`md5sum "/boot/config/plugins/${APPNAME}/$FILENAME" | sed -n 's!\([A-Za-z0-9]*\) .*!\1!p'`
+				app_logger "Creating MD5 file" info log
+				echo "$MD5HASH" > "/boot/config/plugins/${APPNAME}/${FILENAME}.md5"
+			fi
+
+			# Remove previous versions from USB
+			find /boot/config/plugins/${APPNAME}/${APPNAME}-$AUTHOR-*-src.tar.gz -type f -not -name "$FILENAME" | xargs rm 2> /dev/null
+			find /boot/config/plugins/${APPNAME}/${APPNAME}-$AUTHOR-*-src.tar.gz.md5 -type f -not -name "${FILENAME}.md5" | xargs rm 2> /dev/null
+
+			# Make the install directory
+			if [ ! -d "$INSTALLDIR" ]; then 
+				mkdir -p "$INSTALLDIR"
+				if [ ! -d "$INSTALLDIR" ]; then
+					app_logger "Install failed: Unable to create install directory " error all
+					sleep 3
+					exit 1
+				fi
+			fi
+
+			# Install the downloaded file and move from temp to install directory
+			tar -xf "/boot/config/plugins/${APPNAME}/$FILENAME" -C "/tmp"
+			rsync -Kar "/tmp/${APPNAME}-${LATESTVERSION}/." "$INSTALLDIR"
+			rm -Rf "/tmp/${APPNAME}-${LATESTVERSION}"
+
+			# Make directories and app config
+			app_make_dirs
+			write_app_config
+		else
+			rm "/boot/config/plugins/${APPNAME}/$FILENAME"
+			[ -f "/boot/config/plugins/${APPNAME}/${FILENAME}.md5" ] && rm -f "/boot/config/plugins/${APPNAME}/${FILENAME}.md5"
+			[ "$MD5HASH" != "" ] && app_logger "Install failed: Failed MD5 checksum " error all || app_logger "Install failed: Failed integrity test " error all
+			sleep 3
+			exit 1
+		fi
+	else
+		app_logger "Install failed: Install file missing " error all
+		sleep 3
+		exit 1
+	fi
+
+	# Check for installed files after extract. Display ok if successful
+	[ -f "$INSTALLDIR/$APPEXECUTABLE" ] && app_logger "Install OK! " info all || app_logger "Install failed: App executable not found " error all 
+	sleep 1
+}
+
+app_make_dirs() {
+	# Get array status and exit if not started
+	if [ "$ARRAYSTATE" != "Started" ]; then
+		app_logger "Creating application directories" info log
+		app_logger "Directory creation failed: Array stopped " warn log
+		return
+	fi
+
+	app_logger "Updating application directories" info log
+
+	# Make the run directory and config
+	[ ! -d "/var/run/$APPNAME" ] && mkdir -p "/var/run/$APPNAME"
+	[ ! -d "$CONFIGDIR" ] && mkdir -p "$CONFIGDIR"
+	if [ ! -z "$LOGDIR" ] && [ "$LOGDIR" != "" ]; then
+		[ ! -d "$LOGDIR" ] && mkdir -p "$LOGDIR"
+	else
+		[ ! -d "$CONFIGDIR/logs" ] && mkdir -p "$CONFIGDIR/logs"
+	fi
+	if [ ! -z "$CACHEDIR" ] && [ "$CACHEDIR" != "" ]; then
+		[ ! -d "$CACHEDIR" ] && mkdir -p "$CACHEDIR"
+	else
+		[ ! -d "$CONFIGDIR/cache" ] && mkdir -p "$CONFIGDIR/cache"
+	fi
+
+	# Change ownership of the install directory
+	if [ -d "$INSTALLDIR" ]; then
+		local OWNER=$(stat -c %U "$INSTALLDIR")
+		[ "$OWNER" != "$RUNAS" ] && chown -R "$RUNAS":users "$INSTALLDIR"
+	fi
+
+	# Change ownership of the config directory
+	if [ -d "$CONFIGDIR" ]; then
+		local OWNER2=$(stat -c %U "$CONFIGDIR")
+		[ "$OWNER2" != "$RUNAS" ] && chown -R "$RUNAS":users "$CONFIGDIR"
+	fi
+
+	# Change ownership of the log directory
+	if [ ! -z "$LOGDIR" ] && [ "$LOGDIR" != "" ]; then
+		if [ -d "$LOGDIR" ]; then
+			local OWNER3=$(stat -c %U "$LOGDIR")
+			[ "$OWNER3" != "$RUNAS" ] && chown -R "$RUNAS":users "$LOGDIR"
+		fi
+	else
+		if [ -d "$CONFIGDIR/logs" ]; then
+			local OWNER3=$(stat -c %U "$CONFIGDIR/logs")
+			[ "$OWNER3" != "$RUNAS" ] && chown -R "$RUNAS":users "$CONFIGDIR/logs"
+		fi
+	fi
+
+	# Change ownership of the cache directory
+	if [ ! -z "$CACHEDIR" ] && [ "$CACHEDIR" != "" ]; then
+		if [ -d "$CACHEDIR" ]; then
+			local OWNER4=$(stat -c %U "$CACHEDIR")
+			[ "$OWNER4" != "$RUNAS" ] && chown -R "$RUNAS":users "$CACHEDIR"
+		fi
+	else
+		if [ -d "$CONFIGDIR/cache" ]; then
+			local OWNER4=$(stat -c %U "$CONFIGDIR/cache")
+			[ "$OWNER4" != "$RUNAS" ] && chown -R "$RUNAS":users "$CONFIGDIR/cache"
+		fi
+	fi
+}
+
+app_newver() {
+	# Check for net connectivity to the repo
+	local NEWVER=""
+	local REPOVER="${REPO}/commits/${BRANCH}.atom"
+	local NETCHECK=`timeout 5 wget --no-check-certificate -qST4 --spider "$REPO" 2>&1 | grep HTTP | tail -1 | cut -f1 | awk '{print $NF}'`
+	[ "$NETCHECK" == "OK" ] && NEWVER=`wget -qO- --no-check-certificate "$REPOVER" |  grep -m 1 "2008:Grit" | sed -n 's!^.*Commit/\(.*\)</id>!\1!p'`
+
+	echo "$NEWVER"
+}
+
+app_curver() {
+	# This gets the current version installed
+	local CURVER=""
+	if [ "$ARRAYSTATE" == "Started" ]; then
+		[ -d "$INSTALLDIR" ] && CURVER=`sudo -H -u "$RUNAS" /bin/bash -c ". $STARTFILE; git --git-dir=${INSTALLDIR}/.git rev-parse HEAD"` || CURVER="NOT INSTALLED"
+	fi
+
+	echo "$CURVER"
+}
+
+app_storagesize() {
+	# Get size of Install directory
+	local INSTSIZE=0
+	if [ ! -z "$INSTALLDIR" ]; then
+		if [ -d "$INSTALLDIR" ]; then
+			INSTSIZE=`du -shm "$INSTALLDIR" | cut -f1 | sed 's/[^0-9]*//g'`
+		elif [ -f "$INSTALLDIR" ]; then
+			INSTSIZE=`ls -lah --block-size=M "$INSTALLDIR" | awk '{ print $5}'`
+		fi
+	fi
+
+	# Get size of Config directory
+	local DATSIZE=0
+	if [ ! -z "$CONFIGDIR" ]; then
+		if [ -d "$CONFIGDIR" ]; then
+			DATSIZE=`du -shm "$CONFIGDIR" | cut -f1 | sed 's/[^0-9]*//g'`
+		elif [ -f "$CONFIGDIR" ]; then
+			DATSIZE=`ls -lah --block-size=M "$CONFIGDIR" | awk '{ print $5}'`
+		fi
+	fi
+
+	# Get size of Log directory
+	local LOGSIZE=0
+	if [ ! -z "$LOGDIR" ]; then
+		if [ -d "$LOGDIR" ]; then
+			LOGSIZE=`du -shm "$LOGDIR" | cut -f1 | sed 's/[^0-9]*//g'`
+		elif [ -f "$LOGDIR" ]; then
+			LOGSIZE=`ls -lah --block-size=M "$LOGDIR" | awk '{ print $5}'`
+		fi
+	fi
+
+	# Get size of Cache directory
+	local CACHSIZE=0
+	if [ ! -z "$CACHEDIR" ]; then
+		if [ -d "$CACHEDIR" ]; then
+			CACHSIZE=`du -shm "$CACHEDIR" | cut -f1 | sed 's/[^0-9]*//g'`
+		elif [ -f "$CACHEDIR" ]; then
+			CACHSIZE=`ls -lah --block-size=M "$CACHEDIR" | awk '{ print $5}'`
+		fi
+	fi
+
+	local TOTALSIZE="$INSTSIZE"
+	local LINE2=
+
+	# Add config directory if not part of install directory
+	if [ -e "$CONFIGDIR" ] && [ ! -z "$CONFIGDIR" ]; then
+		cd "$CONFIGDIR"
+		local PWD=`pwd`
+		if ! [[ $PWD/  = $INSTALLDIR/* ]]; then
+			LINE2="$LINE2<li>Config Directory: $DATSIZE MB</li>"
+			TOTALSIZE=$(($TOTALSIZE + $DATSIZE))
+		fi
+	fi
+
+	# Add log directory if not part of install directory or config directory
+	if [ -e "$LOGDIR" ] && [ ! -z "$LOGDIR" ]; then
+		cd "$LOGDIR"
+		local PWD=`pwd`
+		if ! [[ $PWD/ = $INSTALLDIR/* ]] && ! [[ $PWD/ = $CONFIGDIR/* ]]; then
+			LINE2="$LINE2<li>Log Directory: $LOGSIZE MB</li>"
+			TOTALSIZE=$(($TOTALSIZE + $LOGSIZE))
+		fi
+	fi
+
+	# Add cache directory if not part of install directory or config directory
+	if [ -e "$CACHEDIR" ] && [ ! -z "$CACHEDIR" ]; then
+		cd "$CACHEDIR"
+		local PWD=`pwd`
+		if ! [[ $PWD/ = $INSTALLDIR/* ]] && ! [[ $PWD/ = $CONFIGDIR/* ]]; then
+			LINE2="$LINE2<li>Cache Directory: $CACHSIZE MB</li>"
+			TOTALSIZE=$(($TOTALSIZE + $CACHSIZE))
+		fi
+	fi
+
+	# Create the HTML response - Add install directory
+	local LINE='<p id="PLINE" style="margin-bottom: 0px;"><b>Total Storage Usage: '"$TOTALSIZE"' MB</b>'
+	LINE="$LINE"'<ul style="margin:0;"><li>Install Directory: '$INSTSIZE' MB</li>'
+	LINE="$LINE$LINE2"
+	LINE="$LINE</ul></p>"
+
+	echo "$LINE"
+}
+
+app_datacheck() {
+	if [ ! -z "$CONFIGDIR" ] && [ -e "$CONFIGDIR" ]; then
+		local FS=$( stat -f -c '%T' "$CONFIGDIR" )
+		if [ "$FS" == "ramfs" ] || [ "$FS" == "tmpfs" ] || [ "$FS" == "proc" ] || [ "$FS" == "sysfs" ]; then
+			echo '<p id="PLINE"><img id="IMGICON" src="/plugins/'$APPNAME'/icons/warning.png" title="Config directory WILL NOT survive a reboot unless set to a folder located on a physical drive"/><span class="red">Config directory located on RAM drive</span></p>'
+		elif [ "$FS" == "msdos" ]; then
+			echo '<p id="PLINE"><img id="IMGICON" src="/plugins/'$APPNAME'/icons/information.png" title="Config directory is set to a folder on the flash drive which may decrease the flash drives life span"/><span class="orange">Config directory located on flash drive</span></p>'
+		else
+			echo '<p id="PLINE"><img id="IMGICON" src="/plugins/'$APPNAME'/icons/correct.png" title="Config directory is set correctly and will persist after a reboot"/><span class="green">Config directory located on physical drive</span></p>'
+		fi
+	else
+		if [ ! -z "$CONFIGDIR" ]; then
+			echo '<p id="PLINE"><img id="IMGICON" src="/plugins/'$APPNAME'/icons/warning.png" title="Config directory will be created when you start the application"/><span class="red">Config directory does not exist</span></p>'
+		fi
+	fi
+	if [ ! -z "$LOGDIR" ] && [ -e "$LOGDIR" ]; then
+		local FS=$( stat -f -c '%T' "$LOGDIR" )
+		if [ "$FS" == "ramfs" ] || [ "$FS" == "tmpfs" ] || [ "$FS" == "proc" ] || [ "$FS" == "sysfs" ]; then
+			echo '<p id="PLINE"><img id="IMGICON" src="/plugins/'$APPNAME'/icons/warning.png" title="Log directory WILL NOT survive a reboot unless set to a folder located on a physical drive"/><span class="red">Log directory located on RAM drive</span></p>'
+		elif [ "$FS" == "msdos" ]; then
+			echo '<p id="PLINE"><img id="IMGICON" src="/plugins/'$APPNAME'/icons/information.png" title="Log directory is set to a folder on the flash drive which may decrease the flash drives life span"/><span class="orange">Log directory located on flash drive</span></p>'
+		else
+			echo '<p id="PLINE"><img id="IMGICON" src="/plugins/'$APPNAME'/icons/correct.png" title="Log directory is set correctly and will persist after a reboot"/><span class="green">Log directory located on physical drive</span></p>'
+		fi
+	else
+		if [ ! -z "$LOGDIR" ]; then
+			echo '<p id="PLINE"><img id="IMGICON" src="/plugins/'$APPNAME'/icons/warning.png" title="Log directory will be created when you start the application"/><span class="red">Log directory does not exist</span></p>'
+		fi
+	fi
+	if [ ! -z "$CACHEDIR" ] && [ -e "$CACHEDIR" ]; then
+		local FS=$( stat -f -c '%T' "$CACHEDIR" )
+		if [ "$FS" == "ramfs" ] || [ "$FS" == "tmpfs" ] || [ "$FS" == "proc" ] || [ "$FS" == "sysfs" ]; then
+			echo '<p id="PLINE"><img id="IMGICON" src="/plugins/'$APPNAME'/icons/warning.png" title="Cache directory WILL NOT survive a reboot unless set to a folder located on a physical drive"/><span class="red">Cache directory located on RAM drive</span></p>'
+		elif [ "$FS" == "msdos" ]; then
+			echo '<p id="PLINE"><img id="IMGICON" src="/plugins/'$APPNAME'/icons/information.png" title="Cache directory is set to a folder on the flash drive which may decrease the flash drives life span"/><span class="orange">Cache directory located on flash drive</span></p>'
+		else
+			echo '<p id="PLINE"><img id="IMGICON" src="/plugins/'$APPNAME'/icons/correct.png" title="Cache directory is set correctly and will persist after a reboot"/><span class="green">Cache directory located on physical drive</span></p>'
+		fi
+	else
+		if [ ! -z "$CACHEDIR" ]; then
+			echo '<p id="PLINE"><img id="IMGICON" src="/plugins/'$APPNAME'/icons/warning.png" title="Cache directory will be created when you start the application"/><span class="red">Cache directory does not exist</span></p>'
+		fi
+	fi
+}
+
+app_updateplg() {
+	local PLGNAME="$APPNAME.plg"
+	local AUTHURL="https://github.com/$AUTHOR"
+	local PLGURL="$AUTHURL/unRAID/tree/master/Plugins/$PLGNAME">
+
+	app_logger "Updating plugin..." info all
+	sleep 1
+
+	# Download and install the latest plugin
+	wget -qO "/tmp/$PLGNAME" --no-check-certificate "$PLGURL"
+	/usr/local/sbin/installplg "/tmp/$PLGNAME"
+	sleep 1
+	cp -f "/tmp/$PLGNAME" "/boot/config/plugins/$PLGNAME" # This is for unraid 5 but won't hurt unraid 6
+	rm -f "/tmp/$PLGNAME"
+	exit 0
+}
+
+app_downgradeplg() {
+	local PLGNAME="$APPNAME.plg"
+
+	# Remove current plugin and rename .old to current name, then install old plugin
+	if [ -f "/boot/config/plugins/${PLGNAME}.old" ]; then
+		app_logger "Downgrading plugin..." info all
+		sleep 1
+		[ -f "/boot/config/plugins/$PLGNAME" ] && sed -i 's!plgVersion.*"[0-9.]*"!plgVersion\t\t"0.0.1"!g' "/boot/config/plugins/$PLGNAME"
+		mv "/boot/config/plugins/${PLGNAME}.old" "/tmp/$PLGNAME"
+		/usr/local/sbin/installplg "/tmp/$PLGNAME"
+		sleep 1
+		cp -f "/tmp/$PLGNAME" "/boot/config/plugins/$PLGNAME" # This is for unraid 5 but won't hurt unraid 6
+		rm -f "/tmp/$PLGNAME"
+	fi
+	exit 0
+}
+
+app_removeplg() {
+	local PLGNAME="$APPNAME.plg"
+
+	# Get the system architecture, can install 64bit if running unraid 6
+	local ARCHTYPE=$( /usr/bin/uname -m )
+
+	# Remove all files and directories pertaining to this plugin
+	if [ "x86_64" != "$ARCHTYPE" ]; then
+		# Stop the app if the control file exists
+		app_stop
+
+		app_logger "Uninstalling $DISPLAYNAME plugin..." info all
+		sleep 1
+ 
+		if [ -d "$DIRCOMMON" ]; then
+			[ -d "${DIRCOMMON}/$APPNAME" ] && rm -fR "${DIRCOMMON}/$APPNAME"
+			[ "$(find $DIRCOMMON -type f | grep startcfg.sh | wc -l 2> /dev/null)" == "0" ] && rm -Rf "$DIRCOMMON"
+		fi
+		local TESTPLG=`grep -H -m1 "ENTITY author" /boot/config/plugins/*.plg 2> /dev/null | grep "$AUTHOR" | cut -d: -f1 | grep -v "$PLGNAME" | wc -l 2> /dev/null`
+		if [ "$TESTPLG" == "0" ]; then
+			[ -f "/usr/local/emhttp/plugins/webGui/PhAzE.page" ] && rm -f "/usr/local/emhttp/plugins/webGui/PhAzE.page"
+			[ -f "/usr/local/emhttp/plugins/webGui/icons/Phaze.png" ] && rm -f "/usr/local/emhttp/plugins/webGui/icons/Phaze.png"
+		fi
+		[ -d "/usr/local/emhttp/plugins/$APPNAME" ] && rm -fR "/usr/local/emhttp/plugins/$APPNAME"
+		[ -e "/etc/rc.d/rc.${APPNAME}" ] && rm -f "/etc/rc.d/rc.${APPNAME}"
+		[ -f "/usr/bin/${APPNAME}-env" ] && rm -f "/usr/bin/${APPNAME}-env"
+		[ -e "/var/log/plugins/$PLGNAME" ] && rm -f "/var/log/plugins/$PLGNAME"
+		[ -d "/boot/config/plugins/$APPNAME" ] && rm -fR "/boot/config/plugins/$APPNAME"
+		[ -f "/boot/config/plugins/${PLGNAME}.old" ] && rm -f "/boot/config/plugins/${PLGNAME}.old"
+		[ -f "/boot/config/plugins/$PLGNAME" ] && rm -f "/boot/config/plugins/$PLGNAME"
+
+		app_logger "************************** " info log
+		app_logger "Uninstall complete - Reboot to remove remaining dependency files " info all
+		app_logger "************************** " info log
+		sleep 1
+	else
+		/usr/local/sbin/plugin remove "$PLGNAME"
+	fi
+	exit 0
+}
+
+app_logger() {
+	# First passed item is the text ($1), secone item is severity ($2 - info, warn, error), third is where to log ($3 - all, log)
+	local LOGTEXT=$1
+	local LOGTYPE=$2
+	local LOGVAR=$3
+	local TIMESTAMP=`date +"%Y-%m-%d %T"`
+
+	# Set the type of log
+	if [ "$LOGTYPE" == "info" ]; then
+		TYPE="[INFO]"
+	elif [ "$LOGTYPE" == "warn" ]; then
+		TYPE="[WARNING]"
+	elif [ "$LOGTYPE" == "error" ]; then
+		TYPE="[ERROR]"
+	fi
+
+	# If log file doesn't exist, make it
+	if [ ! -f "$PLGLOGFILE" ]; then
+		mkdir -p "/var/log/$AUTHOR-Logs"
+		touch "$PLGLOGFILE"
+	fi
+
+	# Echo the text to display and log, or just log file
+	if [ "$LOGVAR" == "all" ]; then
+		echo -e "${LOGTEXT}"
+		echo -e "${TIMESTAMP} ${TYPE}\t${LOGTEXT}" >> "$PLGLOGFILE"
+	elif [ "$LOGVAR" == "log" ]; then
+		echo -e "${TIMESTAMP} ${TYPE}\t${LOGTEXT}" >> "$PLGLOGFILE"
+	fi
+}
+
+app_enable() {
+	app_stop
+	SERVICE=enable
+	app_change_settings $1 $2 $3 $4 $5 $6 $7 $8 $9 ${10} ${11} ${12} ${13}
+	write_plg_config
+	app_start
+}
+
+app_disable() {
+	app_stop
+	SERVICE=disable
+	app_change_settings $1 $2 $3 $4 $5 $6 $7 $8 $9 ${10} ${11} ${12} ${13}
+	write_plg_config
+	write_export_config
+	write_app_config
+}
+
+case "$1" in
+	'start')
+		app_logger "*** Start Initiated ***" info log
+		[ "$2" == "force" ] && ARRAYSTATE="Started"
+		app_start
+	;;
+	'stop')
+		app_logger "*** Stop Initiated ***" info log
+		app_stop
+	;;
+	'restart')
+		app_logger "*** Restart Initiated ***" info log
+		app_restart
+	;;
+	'status')
+		app_status
+	;;
+	'enable')
+		app_logger "*** Apply - Enable Initiated ***" info log
+		VAR="$2"
+		VAR=`echo "$VAR" | sed 's!@20! !g'`
+		VAR=`echo "$VAR" | sed 's!@@2200!@20!g'`
+		VARS=( $VAR )
+		app_enable ${VARS[0]} ${VARS[1]} ${VARS[2]} ${VARS[3]} ${VARS[4]} ${VARS[5]} ${VARS[6]} ${VARS[7]} ${VARS[8]} ${VARS[9]} ${VARS[10]} ${VARS[11]} ${VARS[12]}
+	;;
+	'disable')
+		app_logger "*** Apply - Disable Initiated ***" info log
+		VAR="$2"
+		VAR=`echo "$VAR" | sed 's!@20! !g'`
+		VAR=`echo "$VAR" | sed 's!@@2200!@20!g'`
+		VARS=( $VAR )
+		app_disable ${VARS[0]} ${VARS[1]} ${VARS[2]} ${VARS[3]} ${VARS[4]} ${VARS[5]} ${VARS[6]} ${VARS[7]} ${VARS[8]} ${VARS[9]} ${VARS[10]} ${VARS[11]} ${VARS[12]}
+	;;
+	'install')
+		app_logger "*** Install Initiated ***" info log
+		app_install
+	;;
+	'update')
+		app_logger "*** Update Initiated ***" info log
+		app_update
+	;;
+	'storagesize')
+		app_storagesize
+	;;
+	'datacheck')
+		app_datacheck
+	;;
+	'buttonstart')
+		app_logger "*** Button Start Initiated ***" info log
+		app_buttonstart
+	;;
+	'updateplg')
+		app_logger "*** Plugin Update Initiated ***" info log
+		app_updateplg
+	;;
+	'downgradeplg')
+		app_logger "*** Plugin Downgrade Initiated ***" info log
+		app_downgradeplg
+	;;
+	'removeplg')
+		app_logger "*** Plugin Uninstall Initiated ***" info log
+		app_removeplg
+	;;
+	'latestversion')
+		app_newver
+	;;
+	'currentversion')
+		app_curver
+	;;
+	'writeexport')
+		app_logger "*** Write Export Initiated ***" info log
+		write_export_config
+	;;
+	'checkcache')
+		app_check_cache
+	;;
+	*)
+	echo "usage $0 [start | stop | restart | status | install | update | updateplg | downgradeplg | removeplg | latestversion | currentversion]"
+esac

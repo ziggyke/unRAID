@@ -1,0 +1,9 @@
+#!/bin/bash
+source /boot/config/plugins/Lazylibrarian/Lazylibrarian.cfg
+
+# If service is set to enable, start the application
+if [ "$SERVICE" = "enable" ] && [ "x86_64" == "$ARCHTYPE" ]; then
+	/usr/local/emhttp/plugins/Lazylibrarian/scripts/rc.Lazylibrarian start
+elif [ "$SERVICE" = "enable" ] && [ "x86_64" != "$ARCHTYPE" ]; then
+	/usr/local/emhttp/plugins/Lazylibrarian/scripts/rc.Lazylibrarian start force
+fi

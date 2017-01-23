@@ -1,0 +1,311 @@
+<style type="text/css">
+.longver {
+	width: 235px;
+	min-width: 90%;
+	max-width: 290px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	vertical-align: bottom;
+}
+#UPDATEBUTTON {
+	border-collapse: separate;
+	-moz-box-shadow:inset 0px 1px 0px 0px #dcecfb;
+	-webkit-box-shadow:inset 0px 1px 0px 0px #dcecfb;
+	box-shadow:inset 0px 1px 0px 0px #dcecfb;
+	background-color:#bddbfa;
+	background-image: -webkit-gradient(linear, 0 0, 0 100%, from(#bddbfa), to(#80b5ea));
+	background-image: -moz-linear-gradient(#bddbfa, #80b5ea);
+	background-image: -o-linear-gradient(#bddbfa, #80b5ea);
+	background-image: linear-gradient(#bddbfa, #80b5ea);
+	filter:progid:DXImageTransform.Microsoft.gradient(startColorstr='#bddbfa', endColorstr='#80b5ea');
+	ms-filter: "progid:DXImageTransform.Microsoft.Gradient(GradientType=0,StartColorStr=#bddbfa,EndColorStr=#80b5ea)";
+	text-indent:0;
+	border:1px solid #84bbf3;
+	display:inline-block;
+	color:#ffffff;
+	font-family:Arial;
+	font-size:15px;
+	font-weight:bold;
+	font-style:normal;
+	text-align:center;
+	text-shadow:1px 1px 0px #528ecc;
+	-webkit-transition: all 300ms ease-in;
+	-moz-transition: all 300ms ease-in;
+	-o-transition: all 300ms ease-in;
+	-ms-transition: all 300ms ease-in;
+	transition: all 300ms ease-in;
+	margin: auto;
+}
+#UPDATEBUTTON:hover {
+	border:1px solid #4fa1f4;
+	-moz-box-shadow:inset 0px 0px 8px 4px #67aef6;
+	-webkit-box-shadow:inset 0px 0px 8px 4px #67aef6;
+	box-shadow:inset 0px 0px 8px 4px #67aef6;
+	-webkit-transition: all 300ms ease-out;
+	-moz-transition: all 300ms ease-out;
+	-o-transition: all 300ms ease-out;
+	-ms-transition: all 300ms ease-out;
+	transition: all 300ms ease-out;
+}
+#UPDATEBUTTON:active {
+	border:1px solid #4fa1f4;
+	-moz-box-shadow:inset 0px 0px 8px 4px #67aef6;
+	-webkit-box-shadow:inset 0px 0px 8px 4px #67aef6;
+	box-shadow:inset 0px 0px 8px 4px #67aef6;
+	position:relative;
+	top:1px;
+	left:1px;
+}
+#UPDATEBUTTON.UPDATEBTN {
+	margin: 0px;
+	margin-top: 10px;
+}
+#UPDATEBUTTON.UIBUTTON {
+	display: inline-block;
+	font-size: 12px;
+	padding: 2px 7px 2px 7px;
+	border-radius: 5px;
+	line-height: 12px;
+	margin-top: 0px;
+	margin-right: -5px;
+}
+#STDSMBUTTON {
+	width: 60px;
+	margin: 0px;
+}
+#STDSMBUTTONR {
+	width: 60px;
+	margin: 0px;
+	margin-right: 5px;
+}
+#STDSMBUTTONL {
+	width: 60px;
+	margin: 0px;
+	margin-left: 5px;
+}
+#STDLGBUTTONR {
+	width: 110px;
+	margin: 0px;
+	margin-right: 5px;
+}
+#STDLGBUTTONL {
+	width: 110px;
+	margin: 0px;
+	margin-left: 5px;
+}
+#STDLGBUTTON {
+	width: 100px;
+	margin: 0px;
+}
+#VERSION {
+	display: inline-block;
+	margin-top: 5px;
+	margin-bottom: 5px;
+	text-align: center;
+}
+#TEXTLARGE {
+	width: 250px;
+}
+#TEXTSMALL {
+	width: 225px;
+}
+#TEXTUSER {
+	style="width: 165px"
+}
+#IMGICON {
+	margin-top: -2px;
+}
+#DIVIDER {
+	background-color: #FFFFFF;
+	border: 1px solid #000000;
+	height: 1px;
+	width: 100%;
+	font-size: 8px;
+}
+#ERRORPAD {
+	padding: 0px;
+}
+#ACTIVITYLINK {
+	color: inherit;
+}
+#BOTTOMPAD {
+	margin-bottom: 35px;
+}
+.green {
+	color: #33cc33;
+	padding-left: 5px;
+	padding-right: 5px;
+}
+.red {
+	color: #ff0000;
+	padding-left: 5px;
+	padding-right: 5px;
+}
+.orange {
+	color: #ff9900;
+	padding-left: 5px;
+	padding-right: 5px;
+}
+#PANELALL {
+	margin: auto;
+	max-width: 1248px;
+	min-width: 1000px;
+}
+#PANELLEFT {
+	float: left;
+	width: 50%;
+}
+#title.TITLEBARLEFT {
+	float: left;
+	width: 95%;
+	margin-top: 20px;
+	margin-bottom: 20px;
+	height: 18px;
+}
+#DIVLEFT {
+	float: left;
+	width: 100%;
+	display: table;
+}
+#T100LT {
+	width: 95%;
+	text-align: left;
+	vertical-align: top;
+	display: table-cell;
+	padding-bottom: 10px;
+}
+#T50LT {
+	width: 50%;
+	text-align: left;
+	vertical-align: top;
+	display: table-cell;
+}
+#T50LM {
+	width: 50%;
+	text-align: left;
+	vertical-align: middle;
+	display: table-cell;
+}
+#T50CM {
+	width: 50%;
+	text-align: center;
+	vertical-align: middle;
+	display: table-cell;
+}
+#T25RM {
+	width: 25%;
+	text-align: right;
+	vertical-align: middle;
+	display: table-cell;
+}
+#T25LM {
+	width: 25%;
+	text-align: left;
+	vertical-align: middle;
+	display: table-cell;
+}
+#PANELRIGHT {
+	float: right;
+	width: 50%;
+}
+#title.TITLEBARRIGHT {
+	float: right;
+	width: 95%;
+	margin-top: 20px;
+	margin-bottom: 20px;
+	height: 18px;
+}
+#DIVRIGHT {
+	float: right;
+	padding-right: 15px;
+	margin-left: 10px;
+	width: 95%;
+	display: table;
+}
+#PLINE {
+	margin: 5px;
+	margin-left: 10px;
+	text-align: left;
+}
+#FOOTER2 {
+	position: fixed;
+	font-size: 80%;
+	bottom: 25px;
+	right: 0px;
+	background-color: inherit;
+	padding-left: 5px;
+	padding-right: 5px;
+	z-index : 1;
+}
+.title {
+	vertical-align: middle;
+	margin: 20px 0 22px 0;
+	padding: 5px 10px;
+	-webkit-border-top-left-radius: 5px;
+	-webkit-border-top-right-radius: 5px;
+	-webkit-border-bottom-left-radius: 0;
+	-webkit-border-bottom-right-radius: 0;
+	-moz-border-radius-topleft: 5px;
+	-moz-border-radius-topright: 5px;
+	-moz-border-radius-bottomleft: 0;
+	-moz-border-radius-bottomright: 0;
+	border-top-left-radius: 5px;
+	border-top-right-radius: 5px;
+	border-bottom-left-radius: 0;
+	border-bottom-right-radius: 0;
+	border: 1px solid #E8E8E8;
+	border-bottom: 1px solid #C8C8C8;
+	background: #e6e6e6;
+	background: -moz-linear-gradient(top, #D0D0D0 0%, #C0C0C0 100%);
+	background: -webkit-gradient(linear, left top, left bottom, color-stop(0%,#D0D0D0), color-stop(100%,#C0C0C0));
+	filter: progid:DXImageTransform.Microsoft.gradient( startColorstr='#D0D0D0', endColorstr='#C0C0C0', GradientType=0 );
+	clear: both;
+}
+#title span.left {
+	font-size: 14px;
+}
+#title span.right {
+	float: right;
+}
+#TABLESETTINGS {
+	width: 100%;
+	margin-left: 0px;
+}
+#TDSETTINGS {
+	text-align: left;
+	padding-left: 0px;
+}
+select {min-width: 0px;}
+.no-js #loading {display: none;}
+#loading {
+	display: none;
+	position: fixed;
+	left: 0px;
+	top: 155px;
+
+	width: 100%;
+	height: 100%;
+	z-index: 9999;
+}
+#loading-image {
+	position: absolute;
+	top: 20%;
+	left: 50%;
+	margin-top: -24px;
+	margin-left: -24px;
+	z-index: 10000;
+}
+#loading-text {
+	position: absolute;
+	top: 20%;
+	left: 50%;
+	margin-top: 40px;
+	margin-left: -150px;
+	padding: 0px;
+	width: 300px;
+	text-align: center;
+	background : none;
+	z-index: 10000;
+}
+</style>
