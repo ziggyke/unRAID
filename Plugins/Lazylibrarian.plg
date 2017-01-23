@@ -27,7 +27,6 @@
 	version="&plgVersion;"
 	launch="&launch;"
 	pluginURL="&pluginURL;"
-	authorURL="&authorURL;"
 >
 
 <!--
