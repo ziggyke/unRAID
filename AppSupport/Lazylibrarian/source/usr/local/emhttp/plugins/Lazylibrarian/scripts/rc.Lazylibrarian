@@ -70,7 +70,7 @@ app_start() {
 	write_app_config
 
 	# Start the app
-	sudo -H -u "$RUNAS" /bin/bash -c '. '$STARTFILE'; python '$INSTALLDIR'/'$APPEXECUTABLE' -d -port '$PORT' --datadir '$CONFIGDIR' --start --pidfile '$PIDFILE' > /dev/null 2>&1 &'
+	sudo -H -u "$RUNAS" /bin/bash -c '. '$STARTFILE'; python '$INSTALLDIR'/'$APPEXECUTABLE' -d --port '$PORT' --datadir '$CONFIGDIR' --start --pidfile '$PIDFILE' > /dev/null 2>&1 &'
 
 	# Checks if the app started properly or not, giving it 10 seconds to create the PID file
 	local TIMER=0

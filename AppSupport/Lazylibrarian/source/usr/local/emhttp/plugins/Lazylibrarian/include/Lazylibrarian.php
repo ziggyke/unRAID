@@ -209,16 +209,16 @@ if ($arrayState=="Started" && file_exists("{$app_configdir}/{$appconfigfile}") &
 	$app_port = trim(shell_exec( "grep -m 1 '^http_port =' {$app_configdir}/{$appconfigfile} | sed -n 's!http_port = \([0-9][0-9]*\)!\\1!p'" ));
 	if (is_numeric($app_port)) {
 		if ($app_port < 0 || $app_port > 65535)
-			$app_port = "8181";
+			$app_port = "5299";
 	} else {
-		$app_port = "8181";
+		$app_port = "5299";
 	}
 } else if (isset($app_cfg['PORT']) && is_numeric($app_cfg['PORT'])) {
 	$app_port = $app_cfg['PORT'];
 	if ($app_port < 0 || $app_port > 65535)
-		$app_port = "8181";
+		$app_port = "5299";
 } else {
-	$app_port = "8181";
+	$app_port = "5299";
 }
 
 # URL Base Variable
@@ -835,10 +835,10 @@ function verifyDATA(form) {
 	}
 	if (isNumber(form.arg8.value)) {
 		if (form.arg8.value < 0 || form.arg8.value > 65535) {
-			form.arg8.value = "8181";
+			form.arg8.value = "5299";
 		}
 	} else {
-		form.arg8.value = "8181";
+		form.arg8.value = "5299";
 	}
 	if (!(/\S/.test(form.arg9.value))) {
 		form.arg9.value = "!";
