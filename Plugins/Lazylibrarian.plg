@@ -9,8 +9,8 @@
 	<!ENTITY plgVersion			"2017.01.23.3">
 	<!ENTITY authorURL			"https://github.com/&author;">
 	<!ENTITY pluginURL			"&authorURL;/unRAID/raw/master/Plugins/&name;.plg">
-	<!ENTITY controlFILE		"&name;-&author;-Control-1.2.tar.gz">
-	<!ENTITY controlMD5			"b7409ef07fd825a139a6d1ca68bc587e">
+	<!ENTITY controlFILE		"&name;-&author;-Control-1.3.tar.gz">
+	<!ENTITY controlMD5			"28e67d454991c546da8ad5912f39d7fe">
 	<!ENTITY controlURL			"&authorURL;/unRAID/raw/master/AppSupport/&name;/&controlFILE;">
 	<!ENTITY dependencyFILE		"&name;-&author;-Dependency-1.0_x86.tar.gz">
 	<!ENTITY dependencyMD5		"6e93a03ca2b5de8e3b2f30c3503bb4b5">
@@ -90,8 +90,8 @@ List of files created by this plugin
 INSTALLED TO: /boot/config/plugins/Lazylibrarian
 
 Lazylibrarian.cfg						-> This holds the config used by the plugin
-Lazylibrarian-PhAzE-Control.tar.gz		-> This holds the plugin files
-Lazylibrarian-PhAzE-Dependency.tar.gz	-> This holds the plugin dependency files
+Lazylibrarian-ziggyke-Control-*.tar.gz		-> This holds the plugin files
+Lazylibrarian-ziggyke-Dependency-*.tar.gz	-> This holds the plugin dependency files
 
 INSTALLED TO: /usr/local/emhttp/plugins/webGui
 
@@ -134,7 +134,7 @@ All dependency files 					-> These are binaries and apps that are required to ru
 <FILE Name="/tmp/&name;-script" Run="/bin/bash">
 <INLINE>
 # =========================================================================
-# Logger function - Logs to /var/log/PhAzE-Logs/ and to unRAID display
+# Logger function - Logs to /var/log/ziggyke-Logs/ and to unRAID display
 # =========================================================================
 
 app_logger() {
@@ -432,7 +432,7 @@ rm -f "/tmp/&name;-script"
 # ==============================================
 
 app_logger() {
-	# First passed item is the text ($1), secone item is severity ($2 - info, warn, error), third is where to log ($3 - all, log)
+	# First passed item is the text ($1), second item is severity ($2 - info, warn, error), third is where to log ($3 - all, log)
 	local PLGLOGFILE="/var/log/&author;-Logs/&name;.log"
 	local LOGTEXT=$1
 	local LOGTYPE=$2
@@ -483,7 +483,7 @@ if [ "x86_64" == "$ARCHTYPE" ]; then
 	# Remove all files and directories pertaining to this plugin
 	[ -d "${DIRCOMMON}/&name;" ] &amp;&amp; rm -fR "${DIRCOMMON}/&name;"
 	[ "$(find ${DIRCOMMON} -type f | grep startcfg.sh | wc -l 2> /dev/null)" == "0" ] &amp;&amp; rm -Rf "${DIRCOMMON}"
-	TESTPLG=`grep -H -m1 "ENTITY author" /boot/config/plugins/*.plg 2> /dev/null | grep "PhAzE" | cut -d: -f1 | grep -v "&name;.plg" | wc -l 2> /dev/null`
+	TESTPLG=`grep -H -m1 "ENTITY author" /boot/config/plugins/*.plg 2> /dev/null | grep "&author;" | cut -d: -f1 | grep -v "&name;.plg" | wc -l 2> /dev/null`
 	if [ "$TESTPLG" == "0" ]; then
 		[ -f "/usr/local/emhttp/plugins/webGui/PhAzE.page" ] &amp;&amp; rm -f "/usr/local/emhttp/plugins/webGui/PhAzE.page"
 		[ -f "/usr/local/emhttp/plugins/webGui/icons/Phaze.png" ] &amp;&amp; rm -f "/usr/local/emhttp/plugins/webGui/icons/Phaze.png"
@@ -492,6 +492,7 @@ if [ "x86_64" == "$ARCHTYPE" ]; then
 	[ -e "/etc/rc.d/rc.&name;" ] &amp;&amp; rm -f "/etc/rc.d/rc.&name;"
 	[ -f "/usr/bin/&name;-env" ] &amp;&amp; rm -f "/usr/bin/&name;-env"
 	[ -f "/var/log/plugins/&name;.plg" ] &amp;&amp; rm -f "/var/log/plugins/&name;.plg"
+	[ -f "/tmp/plugins/&name;*" ] &amp;&amp; rm -f "/tmp/plugins/&name;*"
 	[ -d "/boot/config/plugins/&name;" ] &amp;&amp; rm -fR "/boot/config/plugins/&name;"
 	[ -f "/boot/config/plugins/&name;.plg.old" ] &amp;&amp; rm -f "/boot/config/plugins/&name;.plg.old"
 	if [ "x86_64" != "$ARCHTYPE" ]; then
