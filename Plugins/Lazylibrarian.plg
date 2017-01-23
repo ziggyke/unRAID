@@ -6,7 +6,7 @@
 	<!ENTITY launch				"Settings/&name;">
 	<!ENTITY author				"ziggyke">
 	<!ENTITY authorName			"Kristof Ziegler">
-	<!ENTITY plgVersion			"2017.01.19.1">
+	<!ENTITY plgVersion			"2017.01.23.1">
 	<!ENTITY authorURL			"https://github.com/&author;">
 	<!ENTITY pluginURL			"&authorURL;/unRAID/tree/master/Plugins/&name;.plg">
 	<!ENTITY controlFILE		"&name;-&author;-Control-1.0.tar.gz">
